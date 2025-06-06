@@ -1,8 +1,12 @@
 #include "import/mkw/net/selectHandler.hpp"
 #include "import/mkw/net/userHandler.hpp"
+#include "import/mkw/system/raceConfig.hpp"
 #include "import/mkw/ui/page/friendRoomPage.hpp"
 #include "import/mkw/ui/page/wifiFriendMenuPage.hpp"
 #include "import/mkw/ui/page/wifiMenuPage.hpp"
+#include "import/mkw/ui/page/wifiVSResultPage.hpp"
+#include "wwfcGPReport.hpp"
+#include "wwfcLog.hpp"
 #include "wwfcPatch.hpp"
 #include <cstring>
 
@@ -299,6 +303,40 @@ WWFC_DEFINE_PATCH = {
                 "wl:mkw_select_course", static_cast<u32>(selectedCourse)
             );
             wwfc::GPReport::ReportU32("wl:mkw_select_cc", static_cast<u32>(engineClass));
+        }
+        // clang-format on
+    ),
+};
+
+// Report information about the prior match to the server
+WWFC_DEFINE_PATCH = {
+    Patch::CallWithCTR( //
+        WWFC_PATCH_LEVEL_FEATURE, //
+        RMCXD_PORT(0x8064674c, 0x8064daf4, 0x0, 0x0), //
+        // clang-format off
+        [](mkw::UI::WiFiVSResultPage *page) -> void {
+            using namespace mkw::System;
+
+            LOG_INFO("Something something this actually ran...");
+
+            if (!mkw::Net::NetController::Instance()->amITheRoomHost())
+                return;
+
+            if (!page->isTeamVS)
+                return;
+
+            RaceConfig::Scenario* scenario =
+                &RaceConfig::Instance()->menuScenario();
+
+            RaceConfig::RaceConfigPlayer* results = scenario->players();
+
+            u8 buf[256];
+            buf[0] = scenario->playerCount();
+            for (int i = 0; i < scenario->playerCount(); i++) {
+                buf[i + 1] = (u8)results[i].m_previousScore;
+            }
+
+            wwfc::GPReport::ReportB64Encode("wl:mkw_result", buf, sizeof(buf));
         }
         // clang-format on
     ),
