@@ -2,9 +2,14 @@
 
 #  include "import/mkw/net/selectHandler.hpp"
 #  include "import/mkw/net/userHandler.hpp"
+#  include "import/mkw/system/raceConfig.hpp"
 #  include "import/mkw/ui/page/friendRoomPage.hpp"
 #  include "import/mkw/ui/page/wifiFriendMenuPage.hpp"
 #  include "import/mkw/ui/page/wifiMenuPage.hpp"
+#  include "import/mkw/ui/page/wifiVSResultPage.hpp"
+#  include "wwfcAsm.h"
+#  include "wwfcGPReport.hpp"
+#  include "wwfcLog.hpp"
 #  include "wwfcPatch.hpp"
 
 namespace wwfc::mkw::Net
@@ -332,6 +337,53 @@ WWFC_DEFINE_PATCH = {
         WWFC_PATCH_LEVEL_FEATURE,
         RMCXD_PORT(0x808BFEA0, 0x808B97F0, 0x808BEFF0, 0x808AE310), //
         mkw::UI::WifiFriendMenu_onRefocus
+    ),
+};
+
+extern "C" {
+__attribute__((__used__)) static void
+ReportScores(mkw::UI::WiFiVSResultPage* page)
+{
+    using namespace mkw::System;
+
+    WWFC_LOG_INFO("Something something this actually ran...");
+
+    if (!mkw::Net::NetController::Instance()->amITheRoomHost())
+        return;
+
+    if (!page->isTeamVS)
+        return;
+
+    RaceConfig::Scenario* scenario = &RaceConfig::Instance()->menuScenario();
+
+    RaceConfig::RaceConfigPlayer* results = scenario->players();
+
+    u8 buf[256];
+    buf[0] = scenario->playerCount();
+    for (int i = 0; i < scenario->playerCount(); i++)
+        buf[i + 1] = (u8) results[i].m_previousScore;
+
+    wwfc::GPReport::ReportB64Encode("wl:mkw_result", buf, sizeof(buf));
+}
+}
+
+// Report information about the prior match to the server
+WWFC_DEFINE_PATCH = {
+    Patch::BranchWithCTR( //
+        WWFC_PATCH_LEVEL_FEATURE, //
+        RMCXD_PORT(0x80646740, 0x8064dae8, 0x80645dac, 0x80634a58 ), //
+        ASM_LAMBDA(
+            // r3 already contains a WiFiVSResultPage*
+            b         ReportScores;
+
+            // Handle overwritten asm instructions
+            lwz       r0, 0x24(r1); // r1: local_res4
+            mtlr      r0;
+            addi      r1, r1, 0x20;
+
+            // Return out of the parent function
+            blr;
+        )
     ),
 };
 
